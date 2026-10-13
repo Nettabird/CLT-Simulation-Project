@@ -1,0 +1,102 @@
+---
+title: "04. Exponential"
+---
+
+How many draws does a strongly right-skewed population need to appear normal under the central limit theorem?
+
+```{r}
+#| include: false
+source("R/helpers.R")
+GAMMA <- 2; KAPPA <- 6
+```
+
+## 1. Population sampled
+
+```{r}
+pop <- pop_iid("Exponential(1)", rexp, mu = 1, sigma = 1)
+```
+
+Exponential with rate 1, `rexp()`: mean 1, SD 1, skewness 2, excess kurtosis 6. Right-skewed, continuous, light-tailed. The exponential distribution's sharp contrast in skewness with the normal makes it a useful test case.
+
+## 2. What I expected before running the simulation
+
+Skewness is the binding constraint: $\gamma/\sqrt{n}$ with $\gamma =$ `r GAMMA`, which is under `r CRITERIA$skew` only at $n \ge$ `r n_pass(n_skew(GAMMA))`. Kurtosis ($\kappa/n$ with $\kappa =$ `r KAPPA`) should pass by $n =$ `r n_pass(n_kurt(KAPPA))`. KS distance around $n =$ `r n_pass(n_skew(GAMMA))` should be about `r round(ks_pred(n_theory(GAMMA, KAPPA), GAMMA, KAPPA), 3)`, well below `r CRITERIA$ks`. Expected minimum $n$ is `r n_theory(GAMMA, KAPPA)`, much higher than the previous distributions. I did some initial tests and adjusted my sample sizes accordingly.
+
+## 3. Sample sizes investigated
+
+Because the expected minimum n was so high and the results of initial tests were inconsistent, I used many more sample sizes than for the first three distributions. $n = 30$ is included for comparison with the general rule of thumb for the CLT.
+
+```{r}
+# sample sizes
+ns = c(1, 30, 1000, 1500, 1550, 1600, 1610, 1620, 1630, 1640, 1650, 1700, 1800, 2000, 2250, 2500, 2750, 3000, 3500, 4000, 4500, 5000)
+```
+
+For each, `r format(REPS, big.mark = ",")` sample means are simulated with seed `r SEED`.
+
+## 4. Simulation
+
+```{r}
+sim <- simulate_means(pop, ns) |> add_z(pop)
+```
+
+`r TEXT$sim`
+
+## 5. Statistical diagnostics
+
+```{r}
+diag <- diagnose(sim)
+diag |> apply_criteria() |> select(-mu_n, -se_n) |> show_table()
+```
+## 6. Plots
+
+`r TEXT$hist`
+
+```{r}
+#| fig-height: 7
+plot_hist(sim, pop)
+```
+
+```{r}
+#| fig-height: 7
+plot_qq(sim)
+```
+
+```{r}
+plot_convergence(diag)
+```
+
+```{r}
+plot_skew_kurt(diag)
+```
+
+## 7. Interpretation
+
+At $n = 1$ the exponential is strongly right-skewed: skewness 1.97, excess kurtosis 5.6, KS distance 0.159, and no lower tail at all (the standardized mean cannot go below $-1$). The histogram and QQ plots clearly show the skew and kurtosis well into the thousands.
+
+By $n = 30$ the KS distance (0.027) and total tail share (0.048) already pass, but skewness is 0.36 and the lower tail share is 0.014, so the skew and separate tail checks are still showing the asymmetry. Kurtosis ($6/n$) is inside the threshold by $n = 1000$. Skewness ($2/\sqrt{n}$) is the last criterion: 0.058 at 1000, and theoretically inside the threshold from $n = 1601$.
+
+Near that crossover passing is erratic: 1500 passes, 1550 and 1600 fail, 1610 passes, 1630 fails. Skewness noise (about 0.011) is a large share of the 0.05 threshold, so skewness also fails at 2000 (observed 0.062, theoretical 0.045) and 4000 (observed 0.055, theoretical 0.032). The erratic kurtosis failures at 1550 and 1620 are noise too.
+
+## 8. Selected n and justification
+
+Strictly, the first $n$ that passes and stays passing is 4500. I selected $n = 1620$ instead, to split the difference in the noise. The deciding factor was the tails on the QQ plots: 1620 is the first sample size where I see no distance between the data and the line at this resolution, though it's possible I might have a slightly different opinion if I make the plots a bit bigger.
+
+```{r}
+suggest_n(diag)   # smallest n where the starter criteria hold at that n and every larger n
+last_to_pass(diag)  # criteria that were the last to come inside their thresholds
+
+N_SELECTED  <- 1620
+OBSERVATION <- "Split the difference in noisy data."
+```
+
+## 9. What surprised me
+
+Lots of noise in the kurtosis and especially skewness. I expected them to take a while to come down; I didn't expect them to be so erratic.
+
+The difference between 10,000 replications (not shown) and 50,000 was stark. Many more sample sizes failed with 10,000 reps (including the maximum I tested, $n = 5000$) than with 50,000. That's more evidence to suggest a noise check would be interesting.
+
+I'm glad I included a sample size of $n=30$. The contrast between that and the initial distribution says a lot about the overall rule of thumb being $n = 30$, especially in comparison to the minimum $n$ for other distributions.
+
+```{r}
+save_results("04_exponential", "Exponential(1)", diag, N_SELECTED, OBSERVATION)
+```

@@ -1,0 +1,101 @@
+---
+title: "03. Six-sided die"
+---
+
+Does discreteness slow convergence under the central limit theorem? A fair die has the same shape problem as the uniform, plus a lattice of possible means.
+
+```{r}
+#| include: false
+source("R/helpers.R")
+GAMMA <- 0; KAPPA <- -6/5 * (6^2 + 1) / (6^2 - 1)
+```
+
+## 1. Population sampled
+
+```{r}
+pop <- pop_iid("Fair die", rdsix, mu = 3.5, sigma = sqrt(35 / 12), discrete = TRUE)
+```
+
+Fair six-sided die, `rdsix()` (defined in `R/helpers.R` as `sample.int(6, n, replace = TRUE)`): mean 3.5, SD $\sqrt{35/12}$, skewness 0, excess kurtosis about $-1.27$. Discrete, so sample means sit on a lattice with spacing $1/n$.
+
+The discrete uniform distribution is a useful test case for the same reasons as the continuous uniform, with the added benefit of initially seeming even less likely to become normal even with repeated sampling.
+
+## 2. What I expected before running the simulation
+
+Symmetric, bounded, and flat, like the uniform, but discrete.
+
+As with the uniform, skewness is 0. Excess kurtosis at $n = 1$ is $\kappa =$ `r round(KAPPA, 3)`, so kurtosis is inside `r CRITERIA$ex_kurt` once $n \ge$ `r n_pass(n_kurt(KAPPA))`. The KS distance there is about `r round(ks_pred(n_theory(GAMMA, KAPPA), GAMMA, KAPPA, sqrt(35 / 12)), 3)`, close to the threshold of `r CRITERIA$ks`. I therefore expect a minimum $n$ of about `r n_theory(GAMMA, KAPPA)`; it's not clear whether failure will be due to kurtosis or KS distance.
+
+## 3. Sample sizes investigated
+
+```{r}
+# sample sizes
+ns = c(1, 5, 10, 20, 25, 30, 35, 40, 45, 50, 100, 500, 1000)
+```
+
+For each, `r format(REPS, big.mark = ",")` sample means are simulated with seed `r SEED`.
+
+## 4. Simulation
+
+```{r}
+sim <- simulate_means(pop, ns) |> add_z(pop)
+```
+
+`r TEXT$sim`
+
+## 5. Statistical diagnostics
+
+```{r}
+diag <- diagnose(sim)
+diag |> apply_criteria() |> select(-mu_n, -se_n) |> show_table()
+```
+
+## 6. Plots
+
+`r TEXT$hist` `r TEXT$hist_discrete`
+
+```{r}
+#| fig-height: 7
+plot_hist(sim, pop)
+```
+
+```{r}
+#| fig-height: 7
+plot_qq(sim)
+```
+
+```{r}
+plot_convergence(diag)
+```
+
+```{r}
+plot_skew_kurt(diag)
+```
+
+## 7. Interpretation
+
+At $n = 1$ the means sit on six equally spaced points, with no tails (the standardized mean cannot exceed about $\pm 1.46$), a KS distance of 0.149, and excess kurtosis of $-1.28$. Histograms and QQ plots show the discreteness of the distribution.
+
+Skewness is within $\pm 0.036$ at every $n$ and the SD ratio is 0.995 to 1.007. The total tail share is outside its range only at $n = 1$ and $n = 5$ (0.064). KS distance comes inside the threshold at $n = 20$ (0.027) and keeps falling (0.015 at 100).
+
+Kurtosis is the last criterion to pass. It falls like $-1.27/n$ and is outside the threshold at $n = 20$ ($-0.053$) and $n = 25$ ($-0.089$), inside at 30 to 40, outside again at 45 ($-0.057$), and inside from 50 on. The theoretical value is inside the threshold from $n = 26$ ($-0.049$), and at 45 it is $-0.028$, so the failure at 45 is simulation noise rather than shape.
+
+## 8. Selected n and justification
+
+Strictly, the first $n$ that passes and stays passing is 50. In practice I accept $n = 20$: kurtosis is nearly within the limit, and the KS distance is under threshold.
+
+```{r}
+suggest_n(diag)   # smallest n where the starter criteria hold at that n and every larger n
+last_to_pass(diag)  # criteria that were the last to come inside their thresholds
+
+N_SELECTED  <- 20
+OBSERVATION <- "Kurtosis and KS distance are the biggest factors."
+```
+
+## 9. What surprised me
+
+$n = 45$ did not pass all tests! It failed the kurtosis check (but not KS distance), even though 30, 35, and 40 passed all thresholds. I definitely want to add the noise analysis after this. I'd also add more sample sizes between 10 and 50.
+
+```{r}
+save_results("03_die", "Fair die", diag, N_SELECTED, OBSERVATION)
+```

@@ -1,0 +1,89 @@
+---
+title: "08. Cauchy"
+---
+
+What does failure of the central limit theorem look like? The mean of Cauchy draws is Cauchy for every $n$, which checks that the diagnostics can detect failure.
+
+```{r}
+#| include: false
+source("R/helpers.R")
+```
+
+## 1. Population sampled
+
+```{r}
+pop <- pop_iid("Cauchy", rcauchy)   # mu and sigma are undefined, so they are left as NA
+```
+
+Cauchy, `rcauchy()`: no mean, no variance, very heavy tails. The default location and scale for rcauchy() are 0 and 1, respectively.
+
+The CLT does not apply. The mean of $n$ standard Cauchy draws is itself standard Cauchy for every $n$. It makes a useful test case because it *should* fail, so it shows what failure can look like and checks that my diagnostics will detect it.
+
+## 2. What I expected before running the simulation
+
+None of the Cauchy simulations should look normal. As $n$ grows, the sample means remain Cauchy distributed. I expect no consistency in the diagnostics.
+
+## 3. Sample sizes investigated
+
+<!--- if the sample sizes are changed from the default grid, summary must be updated --->
+Twelve sample sizes: `r paste(NS, collapse = ", ")`. For each, `r format(REPS, big.mark = ",")` sample means are simulated with seed `r SEED` (set inside `simulate_means()`).
+
+## 4. Simulation
+
+```{r}
+sim <- simulate_means(pop) |> add_z(pop)
+```
+
+`r TEXT$sim` Because there is no finite SE, `add_z()` standardizes robustly (median and IQR / 1.349). That compares the shape of the distribution of the means with a normal, but it cannot be used to check the scaling. For that, look at `iqr_xbar` in the diagnostics: it should stay near 2 for every $n$.
+
+## 5. Statistical diagnostics
+
+```{r}
+diag <- diagnose(sim)
+diag |> apply_criteria() |> select(-mu_n, -se_n) |> show_table()
+```
+
+## 6. Plots
+
+`r TEXT$hist`
+
+```{r}
+#| fig-height: 7
+plot_hist(sim, pop)
+```
+
+```{r}
+#| fig-height: 7
+plot_qq(sim, ylim = c(-10, 10))
+```
+
+```{r}
+plot_convergence(diag)
+```
+
+```{r}
+plot_skew_kurt(diag)
+```
+
+## 7. Interpretation
+
+As expected, all metrics are consistent with those of the Cauchy distribution.
+
+The histograms and especially the QQ plots are the clearest visual. Looking at those makes it very clear that Cauchy is not converging to anything, at least not anywhere near the sample sizes I'm using.
+
+## 8. Selected n and justification
+
+```{r}
+suggest_n(diag)   # smallest n where the starter criteria hold at that n and every larger n
+
+N_SELECTED  <- Inf
+OBSERVATION <- "Cauchy is not affected by the central limit theorem."
+```
+
+## 9. What surprised me
+
+No surprises. Cauchy does indeed scoff at the central limit theorem.
+
+```{r}
+save_results("08_cauchy", "Cauchy", diag, N_SELECTED, OBSERVATION)
+```

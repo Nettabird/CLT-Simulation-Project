@@ -1,0 +1,110 @@
+---
+title: "05. Poisson"
+---
+
+How does a discrete, skewed population with a small mean ($\lambda = 1$) converge under the central limit theorem?
+
+```{r}
+#| include: false
+source("R/helpers.R")
+```
+
+## 1. Population sampled
+
+```{r}
+LAMBDA <- 1
+pop <- pop_iid("Poisson(1)", \(k) rpois(k, LAMBDA), mu = LAMBDA, sigma = sqrt(LAMBDA), discrete = TRUE)
+```
+
+Poisson, `rpois()` with $\lambda = 1$: mean, variance, skewness, excess kurtosis all 1. Discrete, unbounded.
+
+Poisson at large $n$ looks like binomial. Its skewness and discreteness make it a useful test case for the CLT.
+
+## 2. What I expected before running the simulation
+
+```{r}
+#| include: false
+GAMMA <- 1 / sqrt(LAMBDA); KAPPA <- 1 / LAMBDA
+```
+
+With $\lambda =$ `r LAMBDA`, skewness is $\gamma/\sqrt{n}$ with $\gamma =$ `r GAMMA` and excess kurtosis is $\kappa/n$ with $\kappa =$ `r KAPPA`. Kurtosis should pass by $n =$ `r n_pass(n_kurt(KAPPA))`, but I don't expect skewness to pass until $n \ge$ `r n_pass(n_skew(GAMMA))`. At $n =$ `r n_theory(GAMMA, KAPPA)` I expect a KS distance of about `r round(ks_pred(n_theory(GAMMA, KAPPA), GAMMA, KAPPA, sqrt(LAMBDA)), 3)`. So expected $n$ is `r n_theory(GAMMA, KAPPA)` based on skewness.
+
+## 3. Sample sizes investigated
+
+As for the exponential distribution, the expected minimum n was high and the results of initial tests were inconsistent. So I again used many more sample sizes than for the first three distributions. $n = 30$ is included for comparison with the general rule of thumb.
+
+```{r}
+# sample sizes
+ns = c(1, 30, 100, 200, 300, 350, 400, 410, 420, 430, 440, 450, 500, 550, 600, 650, 700, 800, 900, 1000)
+```
+
+For each, `r format(REPS, big.mark = ",")` sample means are simulated with seed `r SEED`.
+
+## 4. Simulation
+
+```{r}
+sim <- simulate_means(pop, ns) |> add_z(pop)
+```
+
+`r TEXT$sim`
+
+## 5. Statistical diagnostics
+
+```{r}
+diag <- diagnose(sim)
+diag |> apply_criteria() |> select(-mu_n, -se_n) |> show_table()
+```
+
+## 6. Plots
+
+`r TEXT$hist` `r TEXT$hist_discrete`
+
+```{r}
+#| fig-height: 7
+plot_hist(sim, pop)
+```
+
+```{r}
+#| fig-height: 7
+plot_qq(sim)
+```
+
+```{r}
+plot_convergence(diag)
+```
+
+```{r}
+plot_skew_kurt(diag)
+```
+
+## 7. Interpretation
+
+At $n = 1$ the means are discrete and right-skewed (skewness 0.99, excess kurtosis 0.95), with no lower tail (the standardized mean cannot go below $-1$) and a KS distance of 0.238. The histograms show the effects of the discrete initial distribution, but the QQ plots appear fairly smooth at this resolution.
+
+By $n = 30$ kurtosis (0.032), both tail shares (0.022 and 0.032), and the SD ratio are already inside their limits, and KS distance follows at $n = 100$ (0.024). Skewness ($1/\sqrt{n}$) is the last criterion: 0.199 at 30, 0.117 at 100, and theoretically below 0.05 from $n = 401$.
+
+Near that crossover, passing is erratic. 410 passes, but 420 to 500 all fail skewness (0.052 to 0.085, against theoretical values of 0.045 to 0.049), and 430 also fails kurtosis (0.052, theoretical 0.002), which is consistent with simulation noise. From 550 on every $n$ passes.
+
+## 8. Selected n and justification
+
+Because kurtosis is well below threshold for most sample sizes around the theoretical 410, and skewness wanders around near the cutoff for so long, I'll go with the theoretical minimum of 410.
+
+```{r}
+suggest_n(diag)   # smallest n where the starter criteria hold at that n and every larger n
+last_to_pass(diag)  # criteria that were the last to come inside their thresholds
+
+N_SELECTED  <- 410
+OBSERVATION <- "With skewness and kurtosis both on their way down, and kurtosis well below threshold, I'll go with the theoretical minimum n."
+```
+
+## 9. What surprised me
+
+$n = 410$ did pass all tests, but the next five didn't, mostly due to skewness but kurtosis was in there too. The first sample size to pass entirely (all greater $n$ also passed) wasn't until $n = 550$. 
+
+It would be interesting to:
+- try varying values of lambda to see how the minimum value of $n$ changes
+- compare the Poisson with the binomials.
+
+```{r}
+save_results("05_poisson", "Poisson(1)", diag, N_SELECTED, OBSERVATION)
+```

@@ -1,0 +1,103 @@
+---
+title: "02. Continuous uniform"
+---
+
+How quickly does the mean of flat, bounded, symmetric draws become normal under the central limit theorem?
+
+```{r}
+#| include: false
+source("R/helpers.R")
+GAMMA <- 0; KAPPA <- -1.2
+```
+
+## 1. Population sampled
+
+```{r}
+pop <- pop_iid("Uniform(0, 1)", runif, mu = 0.5, sigma = sqrt(1 / 12))
+```
+
+Continuous uniform on (0, 1), `runif()`: mean 1/2, SD $\sqrt{1/12}$, skewness 0, excess kurtosis $-1.2$. Seeing the flat initial distribution "turn into" a normal distribution under the CLT is a memorable experience when first studying statistics.
+
+## 2. What I expected before running the simulation
+
+Symmetric, bounded, no tails at very low $n$. Skewness is 0 at every $n$. Excess kurtosis is $\kappa/n$ with $\kappa =$ `r KAPPA`, so kurtosis is below `r CRITERIA$ex_kurt` for $n \ge$ `r n_pass(n_kurt(KAPPA))`. The KS distance of about `r round(ks_pred(first_grid(n_theory(GAMMA, KAPPA)), GAMMA, KAPPA), 3)` is well below `r CRITERIA$ks`. So kurtosis is the deciding factor, and `r first_grid(n_theory(GAMMA, KAPPA))` is the first grid value that should pass even with simulation noise.
+
+## 3. Sample sizes investigated
+
+```{r}
+# sample sizes
+ns = c(1, 2, 5, 10, 20, 25, 30, 35, 40, 45, 50, 100, 500, 1000)
+```
+
+For each, `r format(REPS, big.mark = ",")` sample means are simulated with seed `r SEED`.
+
+## 4. Simulation
+
+```{r}
+sim <- simulate_means(pop, ns) |> add_z(pop)
+```
+
+`r TEXT$sim`
+
+## 5. Statistical diagnostics
+
+```{r}
+diag <- diagnose(sim)
+diag |> apply_criteria() |> select(-mu_n, -se_n) |> show_table()
+```
+
+## 6. Plots
+
+`r TEXT$hist`
+
+```{r}
+#| fig-height: 7
+plot_hist(sim, pop)
+```
+
+```{r}
+#| fig-height: 7
+plot_qq(sim)
+```
+
+```{r}
+plot_convergence(diag)
+```
+
+```{r}
+plot_skew_kurt(diag)
+```
+
+## 7. Interpretation
+
+At $n = 1$ the means are flat and bounded, with no tails, a KS distance of 0.059, and excess kurtosis of $-1.2$. The histograms evolve from rectangular to triangular and spread out from there into an effectively normal distribution. The QQ plots show the majority of the reduction of the excess kurtosis is through $n = 10$.
+
+By $n = 2$ every criterion except kurtosis is inside its threshold and stays there: KS distance is at most 0.018, tail shares are 0.020 to 0.026 each, and the SD ratio is 0.997 to 1.006. Skewness is within $\pm 0.025$ at every $n$, as expected for a symmetric population.
+
+Excess kurtosis falls like $-1.2/n$ and is the last criterion to pass. It is just outside the threshold at $n = 25$ ($-0.051$) and $n = 30$ ($-0.055$), and inside from $n = 35$ on. The theoretical value at 30 is $-0.040$, so that failure is simulation noise rather than shape.
+
+The diagnostics do not agree with each other. KS distance, the tails, and the Shapiro-Wilk batch rejection rate look normal by $n = 2$ to 10, but the kurtosis criterion needs $n = 35$. 
+
+## 8. Selected n and justification
+
+Because the change in kurtosis was much reduced after $n = 10$, I chose that value as the minimum $n$ to approximate the normal.
+
+```{r}
+suggest_n(diag)   # smallest n where the starter criteria hold at that n and every larger n
+last_to_pass(diag)  # criteria that were the last to come inside their thresholds
+
+N_SELECTED  <- 10
+OBSERVATION <- "Kurtosis is the last to pass, but its change is greatly reduced by $n=10$."
+```
+
+## 9. What surprised me
+
+I haven't learned much about simulation noise before this, so I didn't properly take it into account when deciding what to expect and was then surprised that $n = 30$ didn't pass all tests.
+
+I would like to add error analysis and expand it beyond averages to compare individual replications against the thresholds. The failure rate could provide more useful information for selecting a minimum $n$ based on tolerable error.
+
+<!--- Note: n=30 did pass when I took out the n=2 sample size, so it's due to the RNG. I left it in for when I come back and add noise analysis. I'll notice it and look for a similar pattern of passing/failing then. --->
+
+```{r}
+save_results("02_uniform", "Uniform(0, 1)", diag, N_SELECTED, OBSERVATION)
+```

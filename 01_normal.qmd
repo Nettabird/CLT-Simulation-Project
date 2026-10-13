@@ -1,0 +1,117 @@
+---
+title: "01. Standard normal"
+---
+
+How does the sampling distribution of the mean behave when the population is already normal? This file sets the noise floor used to calibrate the thresholds for every other population.
+
+```{r}
+#| include: false
+source("R/helpers.R")
+```
+
+## 1. Population sampled
+
+```{r}
+pop <- pop_iid("Standard normal", rnorm, mu = 0, sigma = 1)
+```
+
+Standard normal, `rnorm()`: mean 0, SD 1, skewness 0, excess kurtosis 0. The mean and variance of $n$ normal draws are exactly $N(0, 1/n)$ for every $n$.
+
+## 2. What I expected before running the simulation
+
+- The sample mean of normal draws is exactly normal, so I use this file to determine the amount of noise there is in the simulation and to calibrate my thresholds.
+- I expect mean, skewness, and excess kurtosis near 0, Shapiro-Wilk rejects near 0.05, tail shares near 0.025 each, and KS distance near 0.004 on average.
+
+## 3. Sample sizes investigated
+
+<!--- if the sample sizes are changed from the default grid, summary must be updated --->
+Twelve sample sizes: `r paste(NS, collapse = ", ")`. For each, `r format(REPS, big.mark = ",")` sample means are simulated with seed `r SEED` (set inside `simulate_means()`).
+
+## 4. Simulation
+
+```{r}
+sim <- simulate_means(pop) |> add_z(pop)
+```
+
+`r TEXT$sim`
+
+## 5. Statistical diagnostics
+
+```{r}
+diag <- diagnose(sim)
+diag |> apply_criteria() |> select(-mu_n, -se_n) |> show_table()
+```
+
+These results help to define "normal enough".
+
+## 6. Plots
+
+`r TEXT$hist`
+
+```{r}
+#| fig-height: 7
+plot_hist(sim, pop)
+```
+
+```{r}
+#| fig-height: 7
+plot_qq(sim)
+```
+
+```{r}
+plot_convergence(diag)
+```
+
+```{r}
+plot_skew_kurt(diag, ylim = c(-0.1, 0.1))
+```
+
+## 7. Interpretation
+
+Because skewness and excess kurtosis were almost always within 0.025 of 0 for this distribution, I chose `r CRITERIA$skew` as the threshold for both. However, this is only looking at average values across all replications; individual replications might not pass with this threshold. In the future, I would add a noise check to the project by measuring noise in the normal distribution and using it to set the thresholds. Then I would check batches of reps of the other distributions, track how many fail that threshold, and use that information to better determine the minimum $n$ for the Central Limit Theorem to hold.
+
+My chosen thresholds for the rest of the distributions are below.
+
+```{r}
+criteria_table()
+```
+
+## 8. Selected $n$ and justification
+
+```{r}
+suggest_n(diag)   # smallest n where the starter criteria hold at that n and every larger n
+
+N_SELECTED  <- 1
+OBSERVATION <- "n = 1 meets the criteria, as expected for the normal distribution."
+```
+
+## 9. What surprised me
+
+I first ran the simulations with 10,000 replications. I was not expecting the distributions to be so choppy, even at high $n$, with that many reps. I thought the normal distribution would look smoother with lots of samples. Because of how choppy the histograms were at 10,000 reps, and because running the normal simulation at 50,000 reps only took a little longer on my machine, I used 50,000 reps for this project for all distributions.
+
+The plots below show the difference in noise for skewness and kurtosis between 10,000 and 50,000 runs. In keeping with sample error, the noise shrinks by the square root of the 5x increase ($\sqrt{5} \approx 2.2$).
+
+```{r}
+# Same population and seed, but only 10,000 replicates per sample size
+sim_10k  <- simulate_means(pop, reps = 10000) |> add_z(pop)
+diag_10k <- diagnose(sim_10k)
+
+# Skewness and excess kurtosis for the 10,000 run (zoomed so the criteria show)
+plot_skew_kurt(diag_10k, ylim = c(-0.2, 0.2), label = "10,000 replications")
+# ...and for the 50,000 run
+plot_skew_kurt(diag, ylim = c(-0.2, 0.2), label = "50,000 replications")
+
+bind_rows(
+  `10,000 replications` = diag_10k,
+  `50,000 replications` = diag,
+  .id = "run"
+  ) |>
+  group_by(run) |>
+  summarise(`Typical error in skewness`        = sqrt(mean(skew^2)),
+            `Typical error in excess kurtosis` = sqrt(mean(ex_kurt^2))) |>
+  kable(digits = 3)
+```
+
+```{r}
+save_results("01_normal", "Standard normal", diag, N_SELECTED, OBSERVATION)
+```

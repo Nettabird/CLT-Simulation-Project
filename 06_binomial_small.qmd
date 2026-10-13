@@ -1,0 +1,117 @@
+---
+title: "06. Binomial, small size"
+---
+
+How does a skewed, discrete population with rare successes ($N = 5$, $p = 0.1$) converge under the central limit theorem?
+
+```{r}
+#| include: false
+source("R/helpers.R")
+```
+
+## 1. Population sampled
+
+```{r}
+SIZE <- 5; PROB <- 0.1
+pop <- pop_iid("Binomial(5, 0.1)", \(k) rbinom(k, SIZE, PROB),
+               mu = SIZE * PROB, sigma = sqrt(SIZE * PROB * (1 - PROB)), discrete = TRUE)
+```
+
+```{r}
+#| include: false
+pq    <- PROB * (1 - PROB)
+mu1   <- SIZE * PROB
+var1  <- SIZE * pq
+skew1 <- (1 - 2 * PROB) / sqrt(var1)
+kurt1 <- (1 - 6 * pq) / var1
+```
+
+Binomial, `rbinom()`, with $N =$ `r SIZE` trials and success probability $p =$ `r PROB`. Bounded, asymmetrical, discrete.
+
+A draw is the number of successes in $N$ trials. About `r round(dbinom(0, SIZE, PROB), 2)` of draws are zero, which leaves a long right tail. The mean is $Np =$ `r mu1`, variance $Np(1-p) =$ `r var1`, skewness $(1-2p)/\sqrt{Np(1-p)} \approx$ `r round(skew1, 3)`, and excess kurtosis $(1-6p(1-p))/(Np(1-p)) \approx$ `r round(kurt1, 3)`.
+
+This binomial's skewness and discreteness make it a useful test case for the central limit theorem.
+
+## 2. What I expected before running the simulation
+
+```{r}
+#| include: false
+GAMMA <- (1 - 2 * PROB) / sqrt(SIZE * PROB * (1 - PROB))
+KAPPA <- (1 - 6 * PROB * (1 - PROB)) / (SIZE * PROB * (1 - PROB))
+```
+
+For $N =$ `r SIZE`, $p =$ `r PROB`, single-draw skewness is `r round(GAMMA, 2)` and excess kurtosis is `r round(KAPPA, 2)`. Kurtosis should pass by $n =$ `r n_pass(n_kurt(KAPPA))`, but skewness won't until at least $n \ge$ `r n_pass(n_skew(GAMMA))`. KS distance should be about `r round(ks_pred(n_theory(GAMMA, KAPPA), GAMMA, KAPPA, sqrt(SIZE * PROB * (1 - PROB))), 3)` there. Expected $n$ with simulation noise is, then, `r n_theory(GAMMA, KAPPA)` due to skewness. I adjusted my sample sizes accordingly.
+
+## 3. Sample sizes investigated
+
+```{r}
+# sample sizes
+ns = c(1, 30, 100, 300, 450, 500, 550, 560, 570, 580, 590, 600, 650, 700, 850, 1000, 1150, 1300, 1500)
+```
+
+For each, `r format(REPS, big.mark = ",")` sample means are simulated with seed `r SEED`.
+
+## 4. Simulation
+
+```{r}
+sim <- simulate_means(pop, ns) |> add_z(pop)
+```
+
+`r TEXT$sim`
+
+## 5. Statistical diagnostics
+
+```{r}
+diag <- diagnose(sim)
+diag |> apply_criteria() |> select(-mu_n, -se_n) |> show_table()
+```
+
+## 6. Plots
+
+`r TEXT$hist` `r TEXT$hist_discrete`
+
+```{r}
+#| fig-height: 7
+plot_hist(sim, pop)
+```
+
+```{r}
+#| fig-height: 7
+plot_qq(sim)
+```
+
+```{r}
+plot_convergence(diag)
+```
+
+```{r}
+plot_skew_kurt(diag)
+```
+
+## 7. Interpretation
+
+At $n = 1$ the means are discrete and strongly right-skewed (skewness 1.19, excess kurtosis 0.99), since 59% of single draws are zero. There is no lower tail and the KS distance is 0.363. As expected, the histograms and QQ plots show the steps in the data characteristic of a discrete distribution. By $n = 450$, the steps are eclipsed by noise; the actual normal distribution is just as choppy at much higher $n$.
+
+Kurtosis is inside its threshold from $n = 30$ on (0.026). The tail shares are inside by $n = 100$ and KS distance by $n = 300$ (0.024). Skewness ($1.19/\sqrt{n}$) is the last criterion: 0.232 at 30, 0.133 at 100, and theoretically below 0.05 from $n = 569$.
+
+Passing is erratic above that crossover. 570 passes, 580 to 650 fail skewness (0.052 to 0.069), 700 to 1000 pass, 1150 fails (0.058, theoretical 0.035), and 1300 and 1500 pass. These failures fit simulation noise of about 0.011 in skewness. Strictly, the first $n$ that passes and stays passing is 1300, more than twice the 580 I expected.
+
+## 8. Selected n and justification
+
+In practice I accept $n = 570$: all the numbers are within limits, and the QQ plot has lost almost all of its curve.
+
+```{r}
+suggest_n(diag)   # smallest n where the starter criteria hold at that n and every larger n
+last_to_pass(diag)  # criteria that were the last to come inside their thresholds
+
+N_SELECTED  <- 570
+OBSERVATION <- "All numbers within limits, and the QQ plot has finally evened out for the most part."
+```
+
+## 9. What surprised me
+
+$n = 1150$ failed the skewness test. So I was correct about what would fail, but not where. That's about twice the expected minumum $n$ with noise. I knew my thresholds were narrow but I didn't realize they were *that* narrow. It's a good reminder to not base this decision on one metric.
+
+```{r}
+save_results("06_binomial_small", "Binomial(5, 0.1)", diag, N_SELECTED, OBSERVATION)
+```

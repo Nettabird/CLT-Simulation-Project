@@ -1,0 +1,166 @@
+---
+title: "12. Summary: final cross-distribution analysis"
+---
+
+```{r}
+#| include: false
+source("R/helpers.R")
+
+# Results saved by files 01-08 (render those first; `quarto render` does them in order).
+res <- list.files("results", pattern = "\\.rds$", full.names = TRUE) |> map(readRDS)
+res <- set_names(res, map_chr(res, "id"))
+res <- map(res, \(r) { r$suggested_n <- suggest_n(r$diag); r })
+normal <- res[["01_normal"]]$diag
+
+main   <- res[str_detect(names(res), "^0[1-8]_")]        # the eight assigned populations
+assump <- res[str_detect(names(res), "^(09|10|11)_")]    # assumption violations (not in the project yet)
+```
+
+This file reads the results saved by files 01 to 08. Every population uses seed `r SEED` and `r format(REPS, big.mark = ",")` simulated sample means per $n$. The sample sizes differ by population: files 01 and 08 use the default grid (`r paste(NS, collapse = ", ")`), and the others use grids based on each population's expected minimum $n$ (listed in each file).
+
+## Comparison table
+
+Skewness, excess kurtosis, and KS distance are shown at the smallest $n$ judged normal, with the standard normal population's value at $n=30$ in parentheses (the simulation noise floor). "Last criteria to pass" names the last criterion (or criteria) to meet its threshold and stay there. "None" means no $n$ is judged normal, and the numbers are then shown at the largest $n$ tested.
+
+```{r}
+ref <- filter(normal, n == 30)
+
+summary_tbl <- map(main, \(r) {
+  sel   <- r$selected_n
+  n_use <- if (is.na(sel)) r$suggested_n else sel
+  mark  <- if (is.na(sel)) "†" else ""
+  none  <- is.na(n_use) || is.infinite(n_use)
+  n_row <- if (none) max(r$diag$n) else n_use
+  row   <- filter(r$diag, n == n_row)
+  tibble(
+    Population                    = r$label,
+    `Smallest n judged normal`    = if (none) paste0("none", mark) else paste0(n_use, mark),
+    `Skewness`                    = row$skew,
+    `Excess kurtosis`             = row$ex_kurt,
+    `KS distance`                 = row$ks,
+    `Last criteria to pass`       = last_to_pass(r$diag),
+    `Key observation`             = r$observation
+  )
+}) |> list_rbind() |>
+  rename_with(\(x) sprintf("%s (normal: %.3f)", x, c(ref$skew, ref$ex_kurt, ref$ks)),
+              c(Skewness, `Excess kurtosis`, `KS distance`))
+kable(summary_tbl, digits = 3)
+```
+
+## Research question: Sample size
+
+Is there evidence for a universal rule such as $n = 30$?
+
+Reasoning from my numbers out to choose a sample size, I'd have to say the evidence is insufficient. There's such a wide range of acceptable sample sizes, even with all factors considered, that to settle on a single sample size and call it "good enough" would require reasoning backwards from statements like, "well, the predictions weren't *that* far off..."
+
+However, I can see why $n = 30$ is used as a general rule of thumb when looking at the question from a more general perspective. All populations except the Cauchy had skew under under 0.5, kurtosis under 0.3, and KS distance under 0.08 at $n=30$. The farthest outlier, the exponential, had become *far* closer to normal than to its original shape at that point. 
+
+The real test of theory is not within the scope of this project; it's whether it holds up under repeated real-world experiments. My understanding is that conclusions drawn under the central limit theorem at about $n=30$ reasonably match real-world experiments for most distributions in the list...in general, for most applications...and with an asterisk on the exponential.
+
+```{r}
+# Smallest n meeting the starter criteria (and staying there), and the results at n = 30.
+map(main, \(r) {
+  at30 <- r$diag |> apply_criteria() |> filter(n == 30)
+  tibble(Population = r$label,
+         `Selected n` = r$selected_n,
+         `Suggested n` = r$suggested_n,
+         `|skew| at 30` = abs(at30$skew),
+         `|kurtosis| at 30` = abs(at30$ex_kurt),
+         `KS at 30` = at30$ks,
+         `Pass at n = 30` = at30$pass
+         )
+}) |> list_rbind() |> kable(digits = 3)
+```
+
+## Definition of "normal enough"
+
+In order to measure against the actual normal distribution even with simulation noise, I set the thresholds relative to the noise I found in the normal distribution in file 01. This also kept the thresholds tight enough that tests would fail well beyond the theoretical "good enough" sample size, "marking" a range of sizes for which to compare metrics.
+
+I used the same thresholds for skewness and kurtosis because they're the same order of magnitude, but the standard error for skewness at `r format(REPS, big.mark = ",")` reps is half that of kurtosis, so skewness's threshold was a bit high and kurtosis's was a bit low, considering the noise issue. The threshold for kurtosis might have been more useful at 0.08 or so, with skewness at 0.04.
+
+Final determinations of "normal enough" were, admittedly, not rigorous. I looked over all the metrics and plots, narrowing the range to a few values for each metric, and chose the one that seemed closest to all thresholds overall. I would like to make that process more structured in future.
+
+```{r}
+criteria_table()
+```
+
+## How the diagnostics are standardized
+
+Each simulated sample mean $\bar{x}$ is standardized as $z = (\bar{x} - \mu) / \text{SE}_n$, where $\text{SE}_n$ is the theoretical standard error of the mean. This puts every $n$ on the same scale so that its distribution can be compared with $N(0, 1).$ Where the SE is undefined (Cauchy), $z$ is centered at the median and scaled by IQR / 1.349 instead, to compare the shape of the distribution with a normal.
+
+## Convergence across populations
+
+```{r}
+all_diag <- map(res, \(r) mutate(r$diag, label = r$label, id = r$id)) |> list_rbind()
+
+plot_compare <- function(ids, min_n = 1) {
+  all_diag |>
+    filter(id %in% ids, n >= min_n) |>
+    select(label, n, skew, ex_kurt, ks) |>
+    pivot_longer(c(skew, ex_kurt, ks)) |>
+    mutate(name = factor(name, levels = c("skew", "ex_kurt", "ks"),
+                     labels = c("Skewness", "Excess kurtosis", "KS distance"))) |>
+    ggplot(aes(n, value, color = label)) +
+    geom_line() + geom_point(size = 1) +
+    facet_wrap(~name, scales = "free_y") +
+    scale_x_log10() +
+    labs(x = "Sample size n (log scale)", y = NULL, color = NULL) +
+    theme(legend.position = "bottom")
+}
+```
+
+The Cauchy distribution dwarfs the other seven populations in kurtosis and skew, so plots with and without it follow. Observe the massive difference in scale on the vertical axis between the two sets of plots. (In the second set, $n = 1, 2$ are not included for any population, for reasons of scale.)
+
+Kolmogorov-Smirnov distance showed the most distinct difference between the populations; skew and kurtosis overlapped quite a bit.
+
+```{r}
+#| fig-height: 8
+#| fig-width: 10
+plot_compare(names(main))
+plot_compare(setdiff(names(main), "08_cauchy"), min_n = 3)
+```
+
+## Research question: Population shape
+
+The uniform and large binomial converged the fastest (with selected $n$ of 10 for both). The Poisson and small binomial were intermediate (400 to 600), and the exponential (about 1600) was the slowest among the populations that converged. So the most heavily skewed populations required the most sample means in order to converge.
+
+Cauchy did not converge at all, as expected due to its lack of finite variance.
+
+**Extremely heavy tails** (File 08)
+
+The Cauchy results, with `iqr_xbar` (the spread of the raw sample means, which would shrink with $n$ if the mean concentrated):
+
+```{r}
+res[["08_cauchy"]]$diag |>
+  select(n, iqr_xbar, skew, ex_kurt, ks, tail) |>
+  show_table()
+```
+
+## Limitations
+
+My thresholds were fairly tight, in part because I wanted to see what would happen, and in part because I wanted to be surprised, which is less likely with looser bounds.
+
+A more appropriate threshold to answer the original question would be 3.5 or 4 standard deviations, since the normal distribution has almost no data past those points.
+
+I was correct that using tighter thresholds would make results interesting over a wide range of sample sizes. I'm also curious whether I can get similarly interesting results using a narrower range with wider thresholds.
+
+## Open questions, and what I would like to add or change
+
+- Of course the first thing to change is to choose metrics based on deviations from the normal, which I should have done in the first place. What has to happen, per distribution, to get the thresholds to agree with the $n=30$ rule of thumb? Even for the exponential? How could those changes be reasonably justified?
+
+- Try different parameters of each distribution to see how they change the minimum $n$.
+
+- Test noise on different thresholds - how loose do they have to be to satisfy the CLT at x, y, z levels of noise (simulation reps)?
+
+- What would have to happen to get all the distributions to satisfy the same metrics at about the same sample sizes? What does "about" have to mean to make that possible?
+
+- Check noise per replication or small group of replications. How far outside of normal can a single rep get for each distribution? How does that change with increasing n?
+
+- Usefully apply the Shapiro-Wilk test instead of just reporting it. What other tests would make sense here? How do the various tests compare to each other?
+
+- What other combinations of factors, parameters, metrics, etc. could be tested? Which would apply to real-world applications and which would not? Why?
+
+- What ARE the tradeoffs to the CLT? How much work is necessary to get a minimum n? Where do real-world predictions fail due to misuse of the CLT?
+
+Some of these questions are probably fairly trivial, but I'm still curious to see the actual numbers. Another project could be visualizing all that data. 
+

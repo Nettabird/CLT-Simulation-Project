@@ -1,0 +1,115 @@
+---
+title: "07. Binomial, large size"
+---
+
+What happens under the central limit theorem when a single draw is already nearly normal ($N = 20$, $p = 0.5$)? This contrasts with the small binomial.
+
+```{r}
+#| include: false
+source("R/helpers.R")
+```
+
+## 1. Population sampled
+
+```{r}
+SIZE <- 20; PROB <- 0.5
+pop <- pop_iid("Binomial(20, 0.5)", \(k) rbinom(k, SIZE, PROB),
+               mu = SIZE * PROB, sigma = sqrt(SIZE * PROB * (1 - PROB)), discrete = TRUE)
+```
+
+```{r}
+#| include: false
+pq    <- PROB * (1 - PROB)
+mu1   <- SIZE * PROB
+var1  <- SIZE * pq
+skew1 <- (1 - 2 * PROB) / sqrt(var1)
+kurt1 <- (1 - 6 * pq) / var1
+```
+
+Binomial, rbinom(), with $N =$ `r SIZE` trials and success probability $p =$ `r PROB`. Bounded, `r if (PROB == 0.5) "symmetric" else "asymmetrical"`, discrete.
+
+A draw is the number of successes in $N$ trials, so it is already a sum of `r SIZE` Bernoulli trials and is close to normal before any averaging. The mean is $Np =$ `r mu1`, variance $Np(1-p) =$ `r var1`, skewness $(1-2p)/\sqrt{Np(1-p)} \approx$ `r round(skew1, 3)`, and excess kurtosis $(1-6p(1-p))/(Np(1-p)) \approx$ `r round(kurt1, 3)`.
+
+This binomial is already close to normal, which contrasts with the small binomial and makes it a useful test case for the central limit theorem.
+
+## 2. What I expected before running the simulation
+
+```{r}
+#| include: false
+GAMMA <- (1 - 2 * PROB) / sqrt(SIZE * PROB * (1 - PROB))
+KAPPA <- (1 - 6 * PROB * (1 - PROB)) / (SIZE * PROB * (1 - PROB))
+```
+
+For $N =$ `r SIZE`, $p =$ `r PROB`, skewness is `r GAMMA` and single-draw excess kurtosis is only `r KAPPA`, so this should be the fastest population to converge. Kurtosis is inside `r CRITERIA$ex_kurt` at $n \ge$ `r n_pass(n_kurt(KAPPA))`, but the KS distance isn't below `r CRITERIA$ks` until $n =$ `r n_ks_lattice(sqrt(SIZE * PROB * (1 - PROB)))`, so I expect a minimum $n$ of `r max(n_pass(n_kurt(KAPPA)), n_ks_lattice(sqrt(SIZE * PROB * (1 - PROB))))`. Since the expected minimum $n$ is so low, I left off sample sizes over 100.
+
+## 3. Sample sizes investigated
+
+```{r}
+# sample sizes
+ns = c(1, 2, 5, 6, 7, 8, 9, 10, 15, 20, 25, 30, 40, 50, 100)
+```
+
+For each, `r format(REPS, big.mark = ",")` sample means are simulated with seed `r SEED`.
+
+## 4. Simulation
+
+```{r}
+sim <- simulate_means(pop, ns) |> add_z(pop)
+```
+
+`r TEXT$sim`
+
+## 5. Statistical diagnostics
+
+```{r}
+diag <- diagnose(sim)
+diag |> apply_criteria() |> select(-mu_n, -se_n) |> show_table()
+```
+
+## 6. Plots
+
+`r TEXT$hist` `r TEXT$hist_discrete`
+
+```{r}
+#| fig-height: 7
+plot_hist(sim, pop)
+```
+
+```{r}
+#| fig-height: 7
+plot_qq(sim)
+```
+
+```{r}
+plot_convergence(diag)
+```
+
+```{r}
+plot_skew_kurt(diag)
+```
+
+## 7. Interpretation
+
+At $n = 1$ the means are already close to normal: both tail shares are inside their ranges (0.021 and 0.020), skewness is 0 by symmetry, and the SD ratio is 1.00. What fails is excess kurtosis ($-0.116$, theoretical $-0.1$) and KS distance (0.089). The histograms and QQ plots show clear steps past $n=10$.
+
+Kurtosis stops being a problem by $n = 6$ (the $-0.081$ at $n = 5$ is noise, against a theoretical $-0.02$). KS distance is the last criterion to pass. It falls like $1/\sqrt{n}$ because of the steps in the binomial distribution.
+
+## 8. Selected n and justification
+
+I selected $n = 10$ based on comparing the histogram and QQ plots with the numbers. The plots are still stepped, but the numbers are good.
+
+```{r}
+suggest_n(diag)   # smallest n where the starter criteria hold at that n and every larger n
+last_to_pass(diag)  # criteria that were the last to come inside their thresholds
+
+N_SELECTED  <- 10
+OBSERVATION <- "Split the difference between the numbers and the plots."
+```
+
+## 9. What surprised me
+
+The first sample size to pass was $n = 10$, less than I predicted. I think this is the only distribution where 1. the minimum sample size was less than expected, and 2. the KS distance made a difference, which I find interesting even though it's what I predicted.
+
+```{r}
+save_results("07_binomial_large", "Binomial(20, 0.5)", diag, N_SELECTED, OBSERVATION)
+```

@@ -1,0 +1,23 @@
+project:
+  title: "Central limit theorem: Monte Carlo study"
+  render:
+    - "0[1-8]_*.qmd"
+    - "12_summary.qmd"
+
+format:
+  html:
+    toc: true
+    grid:
+      body-width: 1000px
+    embed-resources: true
+    code-fold: show
+    mainfont: "Source Serif 4"
+    monofont: "Fira Code"
+    include-in-header:
+      text: |
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,wght@0,400;0,600;1,400&family=Fira+Code&display=swap" rel="stylesheet">
+
+execute:
+  warning: false
+  message: false
